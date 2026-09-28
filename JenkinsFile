@@ -1,0 +1,53 @@
+pipeline {
+    agent any
+    environment {
+        CONTAINER_NAME = 'my_container'
+        DOCKER_IMAGE = 'calculator'
+         }
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['testing','development','production'],
+            description: 'deploy the applications'
+            )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: 'latest',
+            description: 'docker_image'
+            )    
+    }
+    stages {
+        stage('git checkout') {
+            steps {
+               git branch: 'main', credentialsId: '381a6a76-90e1-4e87-9eff-f960183c534f', url: 'https://github.com/GanesanPRL/Jenkin12.git' 
+            }
+        }
+         stage('list') {
+            steps {
+               sh 'ls -ltr'
+            }
+        }
+         stage('build') {
+             when {
+               expression {
+                   params.ENVIRONMENT == 'testing'
+               }
+             }
+            steps {
+               sh 'mvn clean install'
+            }
+        }
+        stage('docker_image') {
+            steps {
+               sh 'docker build -t $DOCKER_IMAGE .'
+            }
+        }
+         stage('docker_container') {
+            steps {
+               sh 'docker rm -f $CONTAINER_NAME 2>/dev/null || true'
+               sh 'docker run -d --name $CONTAINER_NAME $DOCKER_IMAGE'
+               sh 'docker ps -a'
+            }
+        }
+    }
+}
