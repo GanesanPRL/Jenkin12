@@ -1,52 +1,99 @@
 pipeline {
+
     agent any
+
     environment {
-        CONTAINER_NAME = 'my_container'
         DOCKER_IMAGE = 'calculator'
-         }
+        DEPLOYMENT_NAME = 'calculator-deployment'
+        K8S_CONTAINER_NAME = 'calculator'
+    }
+
     parameters {
+
         choice(
             name: 'ENVIRONMENT',
-            choices: ['testing','development','production'],
-            description: 'deploy the applications'
-            )
+            choices: ['testing', 'development', 'production'],
+            description: 'Deployment environment'
+        )
+
         string(
             name: 'IMAGE_TAG',
             defaultValue: 'latest',
-            description: 'docker_image'
-            )    
+            description: 'Docker image tag'
+        )
     }
+
     stages {
-        stage('git checkout') {
+
+        stage('Git Checkout') {
             steps {
-               git branch: 'main', credentialsId: '381a6a76-90e1-4e87-9eff-f960183c534f', url: 'https://github.com/GanesanPRL/Jenkin12.git' 
+                git(
+                    branch: 'main',
+                    credentialsId: '381a6a76-90e1-4e87-9eff-f960183c534f',
+                    url: 'https://github.com/GanesanPRL/Jenkin12.git'
+                )
             }
         }
-         stage('list') {
+
+        stage('List Files') {
             steps {
-               sh 'ls -ltr'
+                sh 'ls -ltr'
             }
         }
-         stage('build') {
-             when {
-               expression {
-                   params.ENVIRONMENT == 'testing'
-               }
-             }
+
+        stage('Maven Build') {
             steps {
-               sh 'mvn clean install'
+                sh 'mvn clean install'
             }
         }
-        stage('docker_image') {
+
+        stage('Docker Build') {
             steps {
-               sh 'docker build -t $DOCKER_IMAGE .'
+                sh """
+                    docker build -t ${DOCKER_IMAGE}:${IMAGE_TAG} .
+                """
             }
         }
-         stage('docker_container') {
+
+        stage('Load Image into Minikube') {
             steps {
-               sh 'docker rm -f $CONTAINER_NAME 2>/dev/null || true'
-               sh 'docker run -d --name $CONTAINER_NAME $DOCKER_IMAGE'
-               sh 'docker ps -a'
+                sh """
+                    minikube image load ${DOCKER_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh """
+                    kubectl apply -f k8s/deployment.yaml
+                """
+            }
+        }
+
+        stage('Update Kubernetes Image') {
+            steps {
+                sh """
+                    kubectl set image deployment/${DEPLOYMENT_NAME} \
+                    ${K8S_CONTAINER_NAME}=${DOCKER_IMAGE}:${IMAGE_TAG}
+                """
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh """
+                    kubectl rollout status deployment/${DEPLOYMENT_NAME} --timeout=60s
+                """
+            }
+        }
+
+        stage('Verify Kubernetes Resources') {
+            steps {
+                sh """
+                    kubectl get deployment
+                    kubectl get pods -o wide
+                """
             }
         }
     }
